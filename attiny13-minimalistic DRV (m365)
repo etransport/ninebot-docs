@@ -1,0 +1,82 @@
+/* Following sketch is minimalistic approach. No battery percentage is transmitted, no power usage logging */
+/* Scooter moves on its own and do not show any errors */
+/* Tested on ATTINY13 cpu, this is as simple as you can get */
+/* External active quartz is necesarry, internal RC is too unstable for soft 115200 baudrate */
+/* Courtesy of https://electro.club/forum/zamena_yacheek_akb_na_Xiaomi_Mijia_Scooter */
+
+#define F_CPU 8000000 // 8 mhz oscillator is used
+
+#include <avr/io.h>
+#include <util/delay.h>
+#include <avr/pgmspace.h>
+
+const char magic[]PROGMEM ={0x55,0xAA,0x0E,0x25,0x01,0x30,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xE1,0x00,0x28,0x28,0x91,0xFE};
+
+#define SOFT_TX_PIN (1<<PB1) // PB1 is concidered as TX output
+#define SOFT_TX_PORT PORTB
+#define SOFT_TX_DDR DDRB
+
+void uart_tx_init ()
+{
+  TCCR0A = 1 << WGM01;    // Compare mode
+  TCCR0B = 1 << CS00;   // Prescaler 1
+  SOFT_TX_PORT |= SOFT_TX_PIN;
+  SOFT_TX_DDR |= SOFT_TX_PIN;
+  OCR0A = 75;     //115200 baudrate at prescaler 1
+}
+
+//Bitbang UART
+void uart_send_byte (unsigned char data)
+{
+  unsigned char i;
+  TCCR0B = 0;
+  TCNT0 = 0;
+  TIFR0 |= 1 << OCF0A;
+  TCCR0B |= (1 << CS00);
+  TIFR0 |= 1 << OCF0A;
+  SOFT_TX_PORT &= ~SOFT_TX_PIN;
+  while (!(TIFR0 & (1 << OCF0A)));
+  TIFR0 |= 1 << OCF0A;
+  for (i = 0; i < 8; i++)
+  {
+    if (data & 1)
+      SOFT_TX_PORT |= SOFT_TX_PIN;
+    else
+      SOFT_TX_PORT &= ~SOFT_TX_PIN;
+    data >>= 1;
+    while (!(TIFR0 & (1 << OCF0A)));
+    TIFR0 |= 1 << OCF0A;
+  }
+  SOFT_TX_PORT |= SOFT_TX_PIN;
+  while (!(TIFR0 & (1 << OCF0A)));
+  TIFR0 |= 1 << OCF0A;
+}
+
+void uart_print(const char *str)
+{
+  byte i = 0;
+  while (str[i]) {
+    uart_send_byte(str[i++]);
+  }
+}
+
+void uart_print(char *str)
+{
+  byte i = 0;
+  while (str[i]) {
+    uart_send_byte(str[i++]);
+  }
+}
+
+void setup()
+{
+    uart_tx_init (); 
+    pinMode(PB1,OUTPUT);
+}
+
+void loop()
+{
+    uart_print(magic); 
+    _delay_ms(1000);
+     
+}
